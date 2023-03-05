@@ -1,0 +1,118 @@
+```{r}
+library(readxl)
+powiaty<- read_excel("Powiaty.xlsx", sheet=1)
+
+opis_powiaty <- read_excel("Powiaty.xlsx", sheet=2)
+powiaty$JPT_KOD_JE <-as.character(powiaty$JPT_KOD_JE)
+```
+
+```{r}
+library(dplyr)
+library(tmap)
+library(tmaptools)
+library(sf)
+install.packages('rgdal')
+library(rgdal)
+
+
+```
+```{r}
+# 1. creating a normalised matrix xij
+xij <- powiaty %>% select(3:8) %>% as.matrix()
+xij
+#change to matrix - creating zij
+zij <- matrix(,nrow(xij), ncol(xij))
+for(j in 1:6) {
+  zij[,j] <- round(xij[,j]/sqrt(sum(xij[,j]^2)),2)
+}
+zij
+```
+
+```{r}
+#2.  Create wj weights - each variable has the same value
+wj <-rep(1,6)
+print(wj)
+vij <- wj*zij
+
+```
+
+```{r}
+#3. creating a+ and a- vectors
+
+aplus <-c(max(vij[,1]),max(vij[,2]),min(vij[,3]),min(vij[,4]),min(vij[,5]),min(vij[,6]))
+aminus <-c(min(vij[,1]),min(vij[,2]),max(vij[,3]),max(vij[,4]),max(vij[,5]),max(vij[,6]))
+aplus
+aminus
+```
+
+```{r}
+#4 Calculating the Euclidean distances of the objects studied from the ideal and anti-ideal solution
+diplus <- matrix(,nrow(xij),1)
+diplus
+diminus <-matrix(,nrow(xij),1)
+for(i in 1:nrow(xij)){
+  diplus[i,1]<- sqrt(sum((vij[i,]-aplus)^2))
+  diminus[i,1]<- sqrt(sum((vij[i,]-aminus)^2))
+}
+diplus
+```
+
+
+```{r}
+#5 Determining the ranking coefficient that determines the similarity of objects to the ideal solution:
+R <- round(diminus/(diminus+diplus),2)
+R
+powiaty$R <- as.vector(R) 
+dane
+
+```
+
+```{r}
+# with TOPSIS 
+install.packages('topsis')
+library(topsis)
+
+#in the form of a vector which is a stimulant+ / destimulant-   
+i <-c('+','+', '-', '-', '-', '-')
+R1 <-topsis(xij,wj,i)
+
+```
+```{r}
+# charts
+powiaty %>% arrange(R) %>%
+ggplot(aes(x=factor(Powiaty,levels=Powiaty),y=R)) +
+geom_point(stat='identity',size=4)+
+coord_flip() +
+theme_bw()+
+geom_segment(aes(y=0,x=Powiaty,yend=R,xend=Powiaty))
+```
+
+
+
+
+
+```{r}
+# reate a cartogram with the R measure for the districts of the Wielkopolskie voivodship 
+powiaty1 <- st_read('powiaty/Powiaty.shp')
+
+powiaty.wlkp <- powiaty1[substr(powiaty1$JPT_KOD_JE,1,2)=='30',]
+
+data_all_wlkp <- left_join(powiaty.wlkp,powiaty)
+
+tm_shape(data_all_wlkp) +
+tm_polygons('R',border.col='black',title='Topsis',
+breaks=quantile(data_all_wlkp$R)) +
+tm_text('Powiaty', size=0.7) +
+tm_shape(data_all_wlkp)+
+tm_text('R', size=0.7,ymod=-0.5)
+```
+
+
+```{r}
+dist.wlkp.eucl <- dist(powiaty[,3:8],method='euclidean')
+cluster <- hclust(dist.wlkp.eucl,method='ward.D')
+plot(cluster,labels=powiaty$Powiaty)
+rect.hclust(cluster,k=4,border='blue')
+
+```
+
